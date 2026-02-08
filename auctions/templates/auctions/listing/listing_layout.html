@@ -1,0 +1,22 @@
+
+<div class="card auction-item mb-4 shadow">
+    <a href="{% url 'auctions:listing_page' auction_id=auction.id %}">
+    {% if auction.image_url %}
+        <div class="card-image-wrapper">
+            <img class="card-img-top listing-img" src="{{ auction.image_url }}" alt="{{ auction.title }} photo">
+        </div>
+    {% endif %}
+        <div class="card-body">
+            <h5 class="card-title"> {{ auction.title }} </h5>
+            <div>
+                <strong>Price:</strong> {{auction.current_price}} $
+            </div>
+            <div class="mb-2">
+                <strong>Category:</strong> {{auction.get_category_display}}
+            </div>
+            <div class="auction-list-date">
+                {{auction.publication_date}}
+            </div>
+        </div>
+    </a>
+</div>

@@ -1,0 +1,26 @@
+{% extends "auctions/layout.html" %}
+
+{% block body %}
+
+    <div class="sub-title">Hi {{ user.username }}</div>
+
+    <div class="user-panel">
+        <div class="card mb-3 pb-5">
+            {% include "auctions/listing/listings_group.html" with auctions=selling sub_title="Selling" %}
+        </div>
+
+        <div class="card mb-3 pb-5">
+            {% include "auctions/listing/listings_group.html" with auctions=sold sub_title="Sold" %}
+        </div>
+
+        <div class="card mb-3 pb-5">  
+            {% include "auctions/listing/listings_group.html" with auctions=bidding sub_title="Bidding" %}
+        </div>
+
+        <div class="card pb-5">  
+            {% include "auctions/listing/listings_group.html" with auctions=won sub_title="Won" %}
+        </div>
+
+    </div>
+
+{% endblock %}
