@@ -26,8 +26,23 @@ def login_view(request):
         # Check if authentication successful
         if user is not None:
             login(request, user)
-            if "next" in request.POST:
-                return HttpResponseRedirect(reverse("auctions:" + request.POST.get("next")[1:]))
+
+            # Replay any comment that was waiting on login
+            pending = request.session.pop("pending_comment", None)
+            if pending:
+                try:
+                    pending_auction = Auction.objects.get(pk=pending["auction_id"])
+                    Comment.objects.create(
+                        user=user,
+                        comment=pending["comment"],
+                        auction=pending_auction,
+                    )
+                except Auction.DoesNotExist:
+                    pass
+
+            next_url = request.POST.get("next")
+            if next_url:
+                return HttpResponseRedirect(next_url)
             return HttpResponseRedirect(reverse("auctions:index"))
         else:
             return render(request, "auctions/login.html", {
@@ -74,18 +89,6 @@ def handle_not_found(request, exception):
             "code": 404,
             "message": "Page not found"
         })
-
-
-class EmptyChoiceField(forms.ChoiceField):
-    def __init__(self, choices=(), empty_label=None, required=True, widget=None, label=None,
-                 initial=None, help_text=None, *args, **kwargs):
-
-        # prepend an empty label if it exists (and field is not required!)
-        if not required and empty_label is not None:
-            choices = tuple([(u'', empty_label)] + list(choices))
-
-        super(EmptyChoiceField, self).__init__(choices=choices, required=required, widget=widget, label=label,
-                                        initial=initial, help_text=help_text, *args, **kwargs)
 
 
 class EmptyChoiceField(forms.ChoiceField):
@@ -273,7 +276,10 @@ def watchlist(request):
             except IntegrityError:
                 return render(request, "auctions/error_handling.html", {"code": 400, "message": "Auction is already on your watchlist"})
 
-        return HttpResponseRedirect("/" + auction_id)
+        next_url = request.POST.get("next")
+        if next_url:
+            return HttpResponseRedirect(next_url)
+        return HttpResponseRedirect(reverse("auctions:listing_page", args=[auction_id]))
 
 
     watchlist_auctions_ids = User.objects.get(id=request.user.id).watchlist.values_list("auction")
@@ -289,6 +295,7 @@ def bid(request):
         if form.is_valid():
             bid_price = float(form.cleaned_data["bid_price"])
             auction_id = request.POST.get("auction_id")
+            next_url = request.POST.get("next")
 
             # Make sure that bid_price is positive
             if bid_price <= 0:
@@ -321,7 +328,9 @@ def bid(request):
                 auction.current_price = bid_price
                 auction.save()
 
-                return HttpResponseRedirect("/" + auction_id)
+                if next_url:
+                    return HttpResponseRedirect(next_url)
+                return HttpResponseRedirect(reverse("auctions:listing_page", args=[auction_id]))
             else:
                 return render(request, "auctions/error_handling.html", {"code": 400, "message": "Your bid is too small"})
         else:
@@ -364,10 +373,9 @@ def close_auction(request, auction_id):
         return render(request, "auctions/error_handling.html", {"code": 405, "message": "Method Not Allowed"})
 
     # Redirect to auction page
-    return HttpResponseRedirect("/" + auction_id)
+    return HttpResponseRedirect(reverse("auctions:listing_page", args=[auction_id]))
 
 
-@login_required(login_url="auctions:login")
 def handle_comment(request, auction_id):
     # Get current auction if exists
     try:
@@ -380,15 +388,33 @@ def handle_comment(request, auction_id):
         form = CommentForm(request.POST)
         if form.is_valid():
             # Get all data from the form
-            comment = form.cleaned_data["comment"]
+            comment_text = form.cleaned_data["comment"]
+
+            if not request.user.is_authenticated:
+                # Stash the comment in session and send the user to log in.
+                # They'll be sent back here, and login_view will save it
+                # for them once they're authenticated.
+                request.session["pending_comment"] = {
+                    "auction_id": auction_id,
+                    "comment": comment_text,
+                }
+                login_url = (
+                    reverse("auctions:login")
+                    + "?next="
+                    + reverse("auctions:listing_page", args=[auction_id])
+                )
+                return HttpResponseRedirect(login_url)
 
             # Save a record
-            comment = Comment(user=User.objects.get(pk=request.user.id), comment = comment, auction = auction)
-            comment.save()
+            Comment.objects.create(
+                user=User.objects.get(pk=request.user.id),
+                comment=comment_text,
+                auction=auction,
+            )
         else:
             return render(request, "auctions/error_handling.html", {"code": 400, "message": "Form is invalid"})
     elif request.method == "GET":
         return render(request, "auctions/error_handling.html", {"code": 405, "message": "Method Not Allowed"})
 
     # Redirect to auction page
-    return HttpResponseRedirect("/" + auction_id)
+    return HttpResponseRedirect(reverse("auctions:listing_page", args=[auction_id]))
